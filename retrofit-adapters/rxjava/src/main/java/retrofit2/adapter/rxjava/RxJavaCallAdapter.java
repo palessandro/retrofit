@@ -23,18 +23,20 @@ import rx.Observable;
 import rx.Observable.OnSubscribe;
 import rx.Scheduler;
 
-final class RxJavaCallAdapter implements CallAdapter<Object> {
+final class RxJavaCallAdapter<R> implements CallAdapter<R, Object> {
   private final Type responseType;
   private final Scheduler scheduler;
+  private final boolean isAsync;
   private final boolean isResult;
   private final boolean isBody;
   private final boolean isSingle;
   private final boolean isCompletable;
 
-  RxJavaCallAdapter(Type responseType, Scheduler scheduler, boolean isResult, boolean isBody,
-      boolean isSingle, boolean isCompletable) {
+  RxJavaCallAdapter(Type responseType, Scheduler scheduler, boolean isAsync, boolean isResult,
+      boolean isBody, boolean isSingle, boolean isCompletable) {
     this.responseType = responseType;
     this.scheduler = scheduler;
+    this.isAsync = isAsync;
     this.isResult = isResult;
     this.isBody = isBody;
     this.isSingle = isSingle;
@@ -45,8 +47,10 @@ final class RxJavaCallAdapter implements CallAdapter<Object> {
     return responseType;
   }
 
-  @Override public <R> Object adapt(Call<R> call) {
-    OnSubscribe<Response<R>> callFunc = new CallOnSubscribe<>(call);
+  @Override public Object adapt(Call<R> call) {
+    OnSubscribe<Response<R>> callFunc = isAsync
+        ? new CallEnqueueOnSubscribe<>(call)
+        : new CallExecuteOnSubscribe<>(call);
 
     OnSubscribe<?> func;
     if (isResult) {
@@ -63,7 +67,7 @@ final class RxJavaCallAdapter implements CallAdapter<Object> {
     }
 
     if (isSingle) {
-      return SingleHelper.toSingle(observable);
+      return observable.toSingle();
     }
     if (isCompletable) {
       return CompletableHelper.toCompletable(observable);
@@ -78,16 +82,6 @@ final class RxJavaCallAdapter implements CallAdapter<Object> {
   private static final class CompletableHelper {
     static Object toCompletable(Observable<?> observable) {
       return observable.toCompletable();
-    }
-  }
-
-  /**
-   * Separate static class defers classloading and bytecode verification since Single is not an
-   * RxJava stable API yet.
-   */
-  private static final class SingleHelper {
-    static Object toSingle(Observable<?> observable) {
-      return observable.toSingle();
     }
   }
 }
